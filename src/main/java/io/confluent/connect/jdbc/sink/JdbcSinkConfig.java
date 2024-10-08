@@ -24,7 +24,6 @@ import io.confluent.connect.jdbc.gp.gpload.GPLoadDataIngestionService;
 import io.confluent.connect.jdbc.source.JdbcSourceConnectorConfig;
 
 import io.confluent.connect.jdbc.util.*;
-import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
@@ -33,6 +32,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class JdbcSinkConfig extends AbstractConfig {
+
+
+    enum DataQueueMode {
+        IN_MEMORY,
+        PERSISTENT_QUEUE
+    }
 
     // gp fast match
     public static final String GP_FAST_MATCH = "gp.fast.match";
@@ -160,6 +165,11 @@ public class JdbcSinkConfig extends AbstractConfig {
     public long gploadFileRetentionTime = 300000; // milisec
     public long gploadRetryLoadInitialInterval = 120000; // milisec
 
+   // ToDo - add the following to the config
+    public String queueDataDir = "";
+    public DataQueueMode dataQueueMode = DataQueueMode.PERSISTENT_QUEUE;
+    public int queueBatchSize = 10000;
+    public long queueBatchTimeout = 30000;
     public enum ColumnSelectionStrategy {
         DEFAULT,
         SINK_PREFERRED,
@@ -1235,12 +1245,15 @@ public class JdbcSinkConfig extends AbstractConfig {
         csvEncoding = getString(CSV_ENCODING);
         gpLogErrors = getBoolean(GP_LOG_ERRORS);
         greenplumHome = getString(GREENPLUM_HOME_CONFIG);
-        if (greenplumHome == null || greenplumHome.isEmpty() || !GPLoadDataIngestionService.checkForGploadBinariesInPath()) {
-            throw new ConfigException("The system environment variable (PATH) does not include the directory where the gpload binaries are located. Please set the binaries in the PATH"
-                    + System.lineSeparator()
-                    + "Or"
-                    + System.lineSeparator()
-                    + "Execute 'greenplum_path.sh' found in the greenplum installation directory and restart Connect.");
+        if (greenplumHome == null || greenplumHome.isEmpty()) {
+            // check if the gpload binaries are in the PATH
+            if(!GPLoadDataIngestionService.checkForGploadBinariesInPath()) {
+                throw new ConfigException("The system environment variable (PATH) does not include the directory where the gpload binaries are located. Please set the binaries in the PATH"
+                        + System.lineSeparator()
+                        + "Or"
+                        + System.lineSeparator()
+                        + "Execute 'greenplum_path.sh' found in the greenplum installation directory and restart Connect.");
+            }
         }
 
         keepGpFiles = getBoolean(KEEP_GP_FILES_CONFIG);

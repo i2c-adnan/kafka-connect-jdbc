@@ -100,6 +100,10 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
 
     @Override
     public void ingest(List<SinkRecord> records) {
+        if (records.isEmpty()) {
+            log.info("No records to ingest");
+            return;
+        }
         keyColumns = new ArrayList<>(fieldsMetadata.keyFieldNames);
         nonKeyColumns = new ArrayList<>(fieldsMetadata.nonKeyFieldNames);
         updateColumnsList = new ArrayList<>();

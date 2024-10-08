@@ -61,7 +61,13 @@ public class JdbcDbWriter {
   void write(final Collection<SinkRecord> records)
       throws SQLException, TableAlterOrCreateException {
     log.info("Flushing records in JDBC Writer "+records.size());
-    final Connection connection = cachedConnectionProvider.getConnection();
+//      try {
+//          Class.forName("org.postgresql.Driver");
+//      } catch (ClassNotFoundException e) {
+//          log.error("Postgres driver not found");
+//      }
+
+      final Connection connection = cachedConnectionProvider.getConnection();
     try {
 
       for (SinkRecord record : records) {

@@ -37,6 +37,10 @@ public class GPLoadDataIngestionService extends GpDataIngestionService {
     @Override
     public void ingest(List<SinkRecord> records) {
         super.ingest(records);
+        if(records.size() == 0){
+            log.info("No records to ingest");
+            return;
+        }
         try {
 
             String suffix = ".csv";
@@ -130,13 +134,17 @@ public class GPLoadDataIngestionService extends GpDataIngestionService {
                 gploadBinary = config.greenplumHome + "/bin/gpload";
             }
 
+            log.info("Running gpload for file {}", yamlFile.getAbsolutePath());
+
             // check if there are any pending files
 
-            loadFile(gploadBinary, yamlFile, csvFile, logFile);
 
-            //if(!config.keepGpFiles) {
+                loadFile(gploadBinary, yamlFile, csvFile, logFile);
+
+                //if(!config.keepGpFiles) {
                 loadPendingFiles(gploadBinary);
-            //}
+                //}
+
         } catch (Exception e) {
             log.error("Error running gpload", e);
             e.printStackTrace();
@@ -248,16 +256,26 @@ public class GPLoadDataIngestionService extends GpDataIngestionService {
     }
 
     public static Boolean checkForGploadBinariesInPath() {
-        String command = "which gpload";
+        String[] commands = {
+                "which gpload",
+                "command -v gpload",
+                "type gpload",
+                "gpload --version" // Attempt to run the command directly
+        };
+
         boolean isInPath = false;
 
-        try {
-            List<String> output = CommonUtils.executeCommand(command);
-
-            isInPath = output.stream().anyMatch(line -> line.contains("no gpload") || line.contains("gpload not found"));
-
-        } catch (Exception e) {
-            log.error("Error while executing command to find PATH", e);
+        for (String command : commands) {
+            try {
+                List<String> output = CommonUtils.executeCommand(command);
+                // Check for the presence of the command in the output
+                if (output.stream().anyMatch(line -> line.contains("gpload") || !line.isEmpty())) {
+                    isInPath = true;
+                    break; // Exit the loop if found
+                }
+            } catch (Exception e) {
+                log.error("Error while executing command to find PATH: " + command, e);
+            }
         }
 
         if (isInPath) {
@@ -268,5 +286,6 @@ public class GPLoadDataIngestionService extends GpDataIngestionService {
 
         return isInPath;
     }
+
 
 }
