@@ -122,6 +122,7 @@ public class GPBinder implements StatementBinder {
 //        };
 
         gpDataIngestor.ingest(records);
+        log.info("Clearing the records");
         records.clear();
     }
 
