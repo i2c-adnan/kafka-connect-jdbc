@@ -46,7 +46,9 @@ public class JdbcSinkConfig extends AbstractConfig {
     private static final String GP_REUSE_TABLE_DOC = "Whether to reuse the table for gpload.";
     private static final String GP_REUSE_TABLE_DISPLAY = "GP Reuse Table";
 
-
+    public static final String REMOVE_BUFFER = "remove.buffer";
+    private static final boolean REMOVE_BUFFER_DEFAULT = false;
+    private static final String REMOVE_BUFFER_DOC = "Whether to remove buffer after a batch insert";
 
     public static final String UPDATE_COLUMN_EXCLUDE_LIST = "update.column.exclude.list";
     private static final String UPDATE_COLUMN_EXCLUDE_LIST_DEFAULT = "";
@@ -1078,7 +1080,8 @@ public class JdbcSinkConfig extends AbstractConfig {
             .define(INSERT_COLUMN_EXCLUDE_LIST, ConfigDef.Type.STRING, INSERT_COLUMN_EXCLUDE_LIST_DEFAULT, ConfigDef.Importance.MEDIUM, INSERT_COLUMN_EXCLUDE_LIST_DOC, WRITES_GROUP, 1, ConfigDef.Width.LONG, INSERT_COLUMN_EXCLUDE_LIST_DISPLAY)
             .define(GP_FAST_MATCH, ConfigDef.Type.BOOLEAN, GP_FAST_MATCH_DEFAULT, ConfigDef.Importance.MEDIUM, GP_FAST_MATCH_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, GP_FAST_MATCH_DISPLAY)
             .define(GP_REUSE_TABLE, ConfigDef.Type.BOOLEAN, GP_REUSE_TABLE_DEFAULT, ConfigDef.Importance.MEDIUM, GP_REUSE_TABLE_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, GP_REUSE_TABLE_DISPLAY)
-            .define(SKIP_DATA_LOAD_CONFIG, ConfigDef.Type.BOOLEAN, SKIP_DATA_LOAD_DEFAULT, ConfigDef.Importance.MEDIUM, SKIP_DATA_LOAD_DOC);
+            .define(SKIP_DATA_LOAD_CONFIG, ConfigDef.Type.BOOLEAN, SKIP_DATA_LOAD_DEFAULT, ConfigDef.Importance.MEDIUM, SKIP_DATA_LOAD_DOC)
+            .define(REMOVE_BUFFER,ConfigDef.Type.BOOLEAN, REMOVE_BUFFER_DEFAULT, ConfigDef.Importance.MEDIUM,REMOVE_BUFFER_DOC);
     public static void printConfigDefTable(ConfigDef configDef) {
 
         System.out.format("%-30s %-20s %-30s %-15s %-50s%n", "Name", "Type", "Default", "Importance", "Documentation");
@@ -1141,6 +1144,7 @@ public class JdbcSinkConfig extends AbstractConfig {
     public final boolean gpssUseStickySession;
     private static final Logger log = LoggerFactory.getLogger(JdbcSinkConfig.class);
     public final boolean skipDataLoad;
+    public final boolean removeBuffer;
 
     public boolean printDebugLogs;
 
@@ -1249,6 +1253,7 @@ public class JdbcSinkConfig extends AbstractConfig {
                     + "Execute 'greenplum_path.sh' found in the greenplum installation directory and restart Connect.");
         }
         skipDataLoad = getBoolean(SKIP_DATA_LOAD_CONFIG);
+        removeBuffer = getBoolean(REMOVE_BUFFER);
 
         keepGpFiles = getBoolean(KEEP_GP_FILES_CONFIG);
 

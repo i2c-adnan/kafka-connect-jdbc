@@ -129,8 +129,10 @@ public class JdbcDbWriter {
       }
 
     }
-    for(TableId tableId : toRemoveEntries) {
-      bufferByTable.remove(tableId);
+    if (config.removeBuffer) {
+      for (TableId tableId : toRemoveEntries) {
+        bufferByTable.remove(tableId);
+      }
     }
   }
 }
