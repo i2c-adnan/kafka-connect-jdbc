@@ -20,6 +20,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.OutputStream;
+import java.net.URL;
+import java.net.HttpURLConnection;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -202,10 +205,15 @@ public class GPLoadDataIngestionService extends GpDataIngestionService {
             log.error("Yaml: {}", yamlFile.getAbsolutePath());
             log.error("Command: {}", gploadCommand);
             log.error("Keeping files for further analysis");
-            // rename to failed (after 5 minutes) because if failed once, it is posibility that it will fail again
+            if (config.pauseConnector) {
+                pauseConnector(config.connectorName);
+            }
 
-            // check if file is more than 5 minutes old
-            if( config.gploadFileRetentionTime != -1 && yamlFile.lastModified() < System.currentTimeMillis() - config.gploadFileRetentionTime) {
+            boolean isOlderThanRetentionTime = config.gploadFileRetentionTime != -1
+                    && yamlFile.lastModified() < System.currentTimeMillis() - config.gploadFileRetentionTime;
+
+            // check if file is more than 5 minutes old, if yes, rename it
+            if (!config.pauseConnector && isOlderThanRetentionTime) {
                 String name = yamlFile.getName().replace(".yml", "");
                 yamlFile.renameTo(new File(tempDir + name + ".yml.failed"));
                 logFile.renameTo(new File(tempDir + name + ".log.failed"));
@@ -267,6 +275,37 @@ public class GPLoadDataIngestionService extends GpDataIngestionService {
         }
 
         return isInPath;
+    }
+
+    public Boolean pauseConnector(String connectorName) {
+        boolean isPaused = false;
+
+        try {
+            String connectorUrl = config.kafkaConnectUrl + "/connectors/" + connectorName + "/pause";
+            URL url = new URL(connectorUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+            conn.setRequestMethod("PUT");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write("{}".getBytes());
+            }
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_NO_CONTENT) {
+                isPaused = true;
+                log.info("Connector '{}' paused successfully.", connectorName);
+            } else {
+                log.error("Failed to pause connector '{}'. Response Code: {}", connectorName, responseCode);
+            }
+
+        } catch (Exception e) {
+            log.error("Exception occurred while pausing connector '{}': {}", connectorName, e.getMessage());
+        }
+
+        return isPaused;
     }
 
 }

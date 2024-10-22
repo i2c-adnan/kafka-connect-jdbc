@@ -268,6 +268,10 @@ public class JdbcSinkConfig extends AbstractConfig {
     private static final boolean SKIP_DATA_LOAD_DEFAULT = false;
     private static final String SKIP_DATA_LOAD_DOC = "Skip data loading to the destination database";
 
+    public static final String PAUSE_CONNECTOR_CONFIG = "pause.connector";
+    private static final boolean PAUSE_CONNECTOR_DEFAULT = true;
+    private static final String PAUSE_CONNECTOR_DOC = "Whether to pause connector on gpload failure or not";
+
     protected ConnectionURLParser dbConnection;
 
 
@@ -1078,7 +1082,8 @@ public class JdbcSinkConfig extends AbstractConfig {
             .define(INSERT_COLUMN_EXCLUDE_LIST, ConfigDef.Type.STRING, INSERT_COLUMN_EXCLUDE_LIST_DEFAULT, ConfigDef.Importance.MEDIUM, INSERT_COLUMN_EXCLUDE_LIST_DOC, WRITES_GROUP, 1, ConfigDef.Width.LONG, INSERT_COLUMN_EXCLUDE_LIST_DISPLAY)
             .define(GP_FAST_MATCH, ConfigDef.Type.BOOLEAN, GP_FAST_MATCH_DEFAULT, ConfigDef.Importance.MEDIUM, GP_FAST_MATCH_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, GP_FAST_MATCH_DISPLAY)
             .define(GP_REUSE_TABLE, ConfigDef.Type.BOOLEAN, GP_REUSE_TABLE_DEFAULT, ConfigDef.Importance.MEDIUM, GP_REUSE_TABLE_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, GP_REUSE_TABLE_DISPLAY)
-            .define(SKIP_DATA_LOAD_CONFIG, ConfigDef.Type.BOOLEAN, SKIP_DATA_LOAD_DEFAULT, ConfigDef.Importance.MEDIUM, SKIP_DATA_LOAD_DOC);
+            .define(SKIP_DATA_LOAD_CONFIG, ConfigDef.Type.BOOLEAN, SKIP_DATA_LOAD_DEFAULT, ConfigDef.Importance.MEDIUM, SKIP_DATA_LOAD_DOC)
+            .define(PAUSE_CONNECTOR_CONFIG,ConfigDef.Type.BOOLEAN, PAUSE_CONNECTOR_DEFAULT, ConfigDef.Importance.HIGH, PAUSE_CONNECTOR_DOC);
     public static void printConfigDefTable(ConfigDef configDef) {
 
         System.out.format("%-30s %-20s %-30s %-15s %-50s%n", "Name", "Type", "Default", "Importance", "Documentation");
@@ -1141,6 +1146,7 @@ public class JdbcSinkConfig extends AbstractConfig {
     public final boolean gpssUseStickySession;
     private static final Logger log = LoggerFactory.getLogger(JdbcSinkConfig.class);
     public final boolean skipDataLoad;
+    public final boolean pauseConnector;
 
     public boolean printDebugLogs;
 
@@ -1249,6 +1255,7 @@ public class JdbcSinkConfig extends AbstractConfig {
                     + "Execute 'greenplum_path.sh' found in the greenplum installation directory and restart Connect.");
         }
         skipDataLoad = getBoolean(SKIP_DATA_LOAD_CONFIG);
+        pauseConnector = getBoolean(PAUSE_CONNECTOR_CONFIG);
 
         keepGpFiles = getBoolean(KEEP_GP_FILES_CONFIG);
 
