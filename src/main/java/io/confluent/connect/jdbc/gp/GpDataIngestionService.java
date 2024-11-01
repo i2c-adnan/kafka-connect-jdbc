@@ -309,9 +309,13 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
                     if (config.printDebugLogs) {
                         log.info("Date Value before conversion: {} for column: {}", value, key);
                     }
-                    value = column.getDateType().format(config, value);
-                    if (config.printDebugLogs) {
-                        log.info("Date Value after: {} for column: {}", value, key);
+                    if (config.debugSkipDateConversion) {
+                        value = config.nullString;
+                    } else {
+                        value = column.getDateType().format(config, value);
+                        if (config.printDebugLogs) {
+                            log.info("Date Value after: {} for column: {}", value, key);
+                        }
                     }
                 }
             }
