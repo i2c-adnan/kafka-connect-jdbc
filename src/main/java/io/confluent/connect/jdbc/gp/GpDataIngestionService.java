@@ -324,6 +324,7 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
             log.info("Adding row: {}", row);
         }
         data.add(row);
+        context.requestCommit();
     }
 
     protected String getGpfDistHost() {
