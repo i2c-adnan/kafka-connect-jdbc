@@ -3,15 +3,15 @@ package io.confluent.connect.jdbc.gp;
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.dialect.PostgreSqlDatabaseDialect;
 import io.confluent.connect.jdbc.sink.JdbcSinkConfig;
-import io.confluent.connect.jdbc.sink.metadata.ColumnDetails;
-import io.confluent.connect.jdbc.sink.metadata.FieldsMetadata;
-import io.confluent.connect.jdbc.sink.metadata.SchemaPair;
-import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
+import io.confluent.connect.jdbc.sink.metadata.*;
 import io.confluent.connect.jdbc.util.*;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.kafka.connect.sink.SinkTaskContext;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 public abstract class GpDataIngestionService implements IGPDataIngestionService {
     private static final Logger log = LoggerFactory.getLogger(GpDataIngestionService.class);
+    protected static SinkTaskContext context;
     protected final JdbcSinkConfig config;
     protected final DatabaseDialect dialect;
     protected SchemaPair schemaPair;
@@ -37,13 +38,16 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
     protected int totalRecords;
     protected ConnectionURLParser dbConnection;
 
-    public GpDataIngestionService(JdbcSinkConfig config, DatabaseDialect dialect, TableDefinition tableDefinition, FieldsMetadata fieldsMetadata, SchemaPair schemaPair) {
+    private final Map<TopicPartition, OffsetAndMetadata> offsetAndMetadataMap = new HashMap<>();
+
+    public GpDataIngestionService(JdbcSinkConfig config, DatabaseDialect dialect, TableDefinition tableDefinition, FieldsMetadata fieldsMetadata, SchemaPair schemaPair, SinkTaskContext context) {
         this.config = config;
         this.tableDefinition = tableDefinition;
         this.fieldsMetadata = fieldsMetadata;
         this.tableName = tableDefinition.id().tableName();
         this.dialect = dialect;
         this.schemaPair = schemaPair;
+        this.context = context;
         setupDbConnection();
 
     }
@@ -199,11 +203,14 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
         log.info("Update mode is {}", config.updateMode.name());
 
         data = new ArrayList<>();
+        SinkRecord lastProcessedRecord = null;
         if (config.updateMode == JdbcSinkConfig.UpdateMode.DEFAULT) {
 
             for (SinkRecord record : records) {
                 addRow(record);
+                lastProcessedRecord = record;
             }
+            saveLastProcessedOffset(lastProcessedRecord);
         } else {
 
 
@@ -225,7 +232,12 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
                 addedKeysList.add(recordKey);
 
                 addRow(record);
+                lastProcessedRecord = record;
             }
+
+            saveLastProcessedOffset(lastProcessedRecord);
+
+            context.requestCommit();
 
             if (config.updateMode == JdbcSinkConfig.UpdateMode.LAST_ROW_ONLY) {
                 Collections.reverse(data);
@@ -336,6 +348,15 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
 
         }
         return localIpOrHost;
+    }
+
+    private void saveLastProcessedOffset(SinkRecord record) {
+        if (record != null) {
+            offsetAndMetadataMap.put(
+                    new TopicPartition(record.topic(), record.kafkaPartition()),
+                    new OffsetAndMetadata(record.kafkaOffset())
+            );
+        }
     }
 
 
