@@ -5,6 +5,8 @@ import io.confluent.connect.jdbc.dialect.PostgreSqlDatabaseDialect;
 import io.confluent.connect.jdbc.sink.JdbcSinkConfig;
 import io.confluent.connect.jdbc.sink.metadata.*;
 import io.confluent.connect.jdbc.util.*;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -17,7 +19,7 @@ import java.util.stream.Stream;
 
 public abstract class GpDataIngestionService implements IGPDataIngestionService {
     private static final Logger log = LoggerFactory.getLogger(GpDataIngestionService.class);
-    private static SinkTaskContext context;
+    protected static SinkTaskContext context;
     protected final JdbcSinkConfig config;
     protected final DatabaseDialect dialect;
     protected SchemaPair schemaPair;
@@ -35,6 +37,8 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
     protected int totalNonKeyColumns;
     protected int totalRecords;
     protected ConnectionURLParser dbConnection;
+
+    private final Map<TopicPartition, OffsetAndMetadata> offsetAndMetadataMap = new HashMap<>();
 
     public GpDataIngestionService(JdbcSinkConfig config, DatabaseDialect dialect, TableDefinition tableDefinition, FieldsMetadata fieldsMetadata, SchemaPair schemaPair, SinkTaskContext context) {
         this.config = config;
@@ -199,11 +203,14 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
         log.info("Update mode is {}", config.updateMode.name());
 
         data = new ArrayList<>();
+        SinkRecord lastProcessedRecord = null;
         if (config.updateMode == JdbcSinkConfig.UpdateMode.DEFAULT) {
 
             for (SinkRecord record : records) {
                 addRow(record);
+                lastProcessedRecord = record;
             }
+            saveLastProcessedOffset(lastProcessedRecord);
         } else {
 
 
@@ -225,7 +232,12 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
                 addedKeysList.add(recordKey);
 
                 addRow(record);
+                lastProcessedRecord = record;
             }
+
+            saveLastProcessedOffset(lastProcessedRecord);
+
+            context.requestCommit();
 
             if (config.updateMode == JdbcSinkConfig.UpdateMode.LAST_ROW_ONLY) {
                 Collections.reverse(data);
@@ -324,7 +336,6 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
             log.info("Adding row: {}", row);
         }
         data.add(row);
-        context.requestCommit();
     }
 
     protected String getGpfDistHost() {
@@ -337,6 +348,15 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
 
         }
         return localIpOrHost;
+    }
+
+    private void saveLastProcessedOffset(SinkRecord record) {
+        if (record != null) {
+            offsetAndMetadataMap.put(
+                    new TopicPartition(record.topic(), record.kafkaPartition()),
+                    new OffsetAndMetadata(record.kafkaOffset())
+            );
+        }
     }
 
 
