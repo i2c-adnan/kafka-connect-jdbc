@@ -304,7 +304,9 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
             }
 
 
-            if (config.dateConversionMode != JdbcSinkConfig.DateConversionMode.DEFAULT && value != null && value.length() > 0) {
+            if(config.dateConversionMode == JdbcSinkConfig.DateConversionMode.TO_NULL){
+                value = config.nullString;
+            } else if (config.dateConversionMode != JdbcSinkConfig.DateConversionMode.DEFAULT && value != null && value.length() > 0) {
                 ColumnDetails column = tableDefinition.getOrderedColumn(key);
                 if (column != null && column.getDateType() != null) {
 

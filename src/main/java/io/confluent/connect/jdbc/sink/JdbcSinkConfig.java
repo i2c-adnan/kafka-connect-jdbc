@@ -1159,6 +1159,7 @@ public class JdbcSinkConfig extends AbstractConfig {
         DEFAULT,
         ENUM,
         CLASS_METHOD,
+        TO_NULL
     }
 
 
