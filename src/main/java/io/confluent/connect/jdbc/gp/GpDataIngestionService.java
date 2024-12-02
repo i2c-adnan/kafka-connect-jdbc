@@ -3,10 +3,7 @@ package io.confluent.connect.jdbc.gp;
 import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.dialect.PostgreSqlDatabaseDialect;
 import io.confluent.connect.jdbc.sink.JdbcSinkConfig;
-import io.confluent.connect.jdbc.sink.metadata.ColumnDetails;
-import io.confluent.connect.jdbc.sink.metadata.FieldsMetadata;
-import io.confluent.connect.jdbc.sink.metadata.SchemaPair;
-import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
+import io.confluent.connect.jdbc.sink.metadata.*;
 import io.confluent.connect.jdbc.util.*;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -15,7 +12,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public abstract class GpDataIngestionService implements IGPDataIngestionService {
     private static final Logger log = LoggerFactory.getLogger(GpDataIngestionService.class);
@@ -36,6 +32,12 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
     protected int totalNonKeyColumns;
     protected int totalRecords;
     protected ConnectionURLParser dbConnection;
+    protected DateTypeConverter dateTypeConverter;
+
+//    public static final String DATE_TYPE = "date";
+//    public static final String TIME_TYPE = "time";
+//    public static final String TIMESTAMP_TYPE = "timestamp";
+
 
     public GpDataIngestionService(JdbcSinkConfig config, DatabaseDialect dialect, TableDefinition tableDefinition, FieldsMetadata fieldsMetadata, SchemaPair schemaPair) {
         this.config = config;
@@ -44,7 +46,7 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
         this.tableName = tableDefinition.id().tableName();
         this.dialect = dialect;
         this.schemaPair = schemaPair;
-        setupDbConnection();
+        initialSetup();
 
     }
 
@@ -53,11 +55,12 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
         this.fieldsMetadata = fieldsMetadata;
         this.tableName = tableName;
         this.dialect = dialect;
-        setupDbConnection();
+        initialSetup();
 
     }
 
-    private void setupDbConnection() {
+    private void initialSetup() {
+        dateTypeConverter = new DateTypeConverter(config);
         dbConnection = new ConnectionURLParser(config.connectionUrl);
     }
 
@@ -100,137 +103,141 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
 
     @Override
     public void ingest(List<SinkRecord> records) {
-        keyColumns = new ArrayList<>(fieldsMetadata.keyFieldNames);
-        nonKeyColumns = new ArrayList<>(fieldsMetadata.nonKeyFieldNames);
-        updateColumnsList = new ArrayList<>();
-        insertColumnsList = new ArrayList<>();
-        List<String> allColumns = new ArrayList<>(fieldsMetadata.allFields.keySet());
+        try {
+            keyColumns = new ArrayList<>(fieldsMetadata.keyFieldNames);
+            nonKeyColumns = new ArrayList<>(fieldsMetadata.nonKeyFieldNames);
+            updateColumnsList = new ArrayList<>();
+            insertColumnsList = new ArrayList<>();
+            List<String> allColumns = new ArrayList<>(fieldsMetadata.allFields.keySet());
 
-        // log table name
-        log.info("Table Name: {}", tableName);
-
-
-        if (config.columnSelectionStrategy == JdbcSinkConfig.ColumnSelectionStrategy.SINK_PREFERRED) {
-            log.info("Applying column selection strategy {}", config.columnSelectionStrategy.name());
-            List<String> sinkTableColumns = tableDefinition.getOrderedColumns().stream().map(ColumnDetails::getColumnName).collect(Collectors.toList());
-            //log
-            log.info("Sink table columns: {}", sinkTableColumns);
-            keyColumns.retainAll(sinkTableColumns);
-            // nonKeyColumns.retainAll(sinkTableColumns);
-            // allColumns.retainAll(sinkTableColumns);
-
-            // now add columns to nonKeyColumns and allColumns from sinkTableColumn if they are missing, in the same order as they are in sinkTableColumns
-            nonKeyColumns.clear();
-            allColumns.clear();
-
-            allColumns.addAll(sinkTableColumns);
-            nonKeyColumns.addAll(sinkTableColumns);
-            nonKeyColumns.removeAll(keyColumns);
+            // log table name
+            log.info("Table Name: {}", tableName);
 
 
-        }
-        if (config.printDebugLogs) {
-            log.info("excluded columns list for update " + config.updateExcludeColumns);
+            if (config.columnSelectionStrategy == JdbcSinkConfig.ColumnSelectionStrategy.SINK_PREFERRED) {
+                log.info("Applying column selection strategy {}", config.columnSelectionStrategy.name());
+                List<String> sinkTableColumns = tableDefinition.getOrderedColumns().stream().map(ColumnDetails::getColumnName).collect(Collectors.toList());
+                //log
+                log.info("Sink table columns: {}", sinkTableColumns);
+                keyColumns.retainAll(sinkTableColumns);
+                // nonKeyColumns.retainAll(sinkTableColumns);
+                // allColumns.retainAll(sinkTableColumns);
 
-            log.info("excluded columns list for insert " + config.insertExcludeColumns);
-        }
+                // now add columns to nonKeyColumns and allColumns from sinkTableColumn if they are missing, in the same order as they are in sinkTableColumns
+                nonKeyColumns.clear();
+                allColumns.clear();
 
-        // add all columns except the updateExcludeColumns to updateColumnsList, excluded columns may have fully qualified names like tablename.columnname
-        List<String> excludedColumns = config.updateExcludeColumns.stream()
-                .filter(column -> column.contains(".") ? column.split("\\.").length > 1 && column.split("\\.")[0].equals(tableName) : true)
-                .map(column -> column.contains(".") ? column.split("\\.")[1] : column )
-                .map(String::trim)
-                .collect(Collectors.toList());
-
-        if (config.printDebugLogs) {
-            log.info("list of excluded columns for update for table: " + tableName + " " + excludedColumns);
-        }
-
-        updateColumnsList.addAll(nonKeyColumns);
-
-        if (config.printDebugLogs) {
-            log.info("The list of columns before exclusion from update list for table " + tableName + " " + updateColumnsList);
-        }
-
-        updateColumnsList.removeAll(excludedColumns);
-
-        if (config.printDebugLogs) {
-            log.info("The list of columns after exclusion from update list for table " + tableName + " " + updateColumnsList);
-        }
-
-        // add all columns except the insertExcludeColumns to insertColumnsList, excluded columns may have fully qualified names like tablename.columnname
-        excludedColumns =config.insertExcludeColumns.stream()
-                .filter(column -> column.contains(".") ? column.split("\\.").length > 1 && column.split("\\.")[0].equals(tableName) : true)
-                .map(column -> column.contains(".") ? column.split("\\.")[1] : column )
-                .map(String::trim)
-                .collect(Collectors.toList());
-
-        if (config.printDebugLogs) {
-            log.info("list of excluded columns for insert for table: " + tableName + " " + excludedColumns);
-        }
-
-        insertColumnsList.addAll(allColumns);
-
-        if (config.printDebugLogs) {
-            log.info("The list of columns before exclusion from insert list for table " + tableName + " " + insertColumnsList);
-        }
-
-        insertColumnsList.removeAll(excludedColumns);
-
-        if (config.printDebugLogs) {
-            log.info("The list of columns after exclusion from insert list for table " + tableName + " " + insertColumnsList);
-        }
-
-        totalColumns = insertColumnsList.size();
-        totalKeyColumns = keyColumns.size();
-        totalNonKeyColumns = nonKeyColumns.size();
-        totalRecords = records.size();
-
-        columnsWithDataType = createColumnNameDataTypeMapList(insertColumnsList);
+                allColumns.addAll(sinkTableColumns);
+                nonKeyColumns.addAll(sinkTableColumns);
+                nonKeyColumns.removeAll(keyColumns);
 
 
-        if (config.printDebugLogs) {
-            log.info("Column Selection::Key columns: {}", keyColumns);
-            log.info("Column Selection::Non Key columns: {}", nonKeyColumns);
-            log.info("Column Selection::All columns: {}", insertColumnsList);
-        }
-        // print all counts in one shot
-        log.info("Total Columns: {}, Total Key Columns: {}, Total Non Key Columns: {}, Total Records: {}", totalColumns, totalKeyColumns, totalNonKeyColumns, totalRecords);
-        log.info("Update mode is {}", config.updateMode.name());
-
-        data = new ArrayList<>();
-        if (config.updateMode == JdbcSinkConfig.UpdateMode.DEFAULT) {
-
-            for (SinkRecord record : records) {
-                addRow(record);
             }
-        } else {
+            if (config.printDebugLogs) {
+                log.info("excluded columns list for update " + config.updateExcludeColumns);
 
-
-            if (config.updateMode == JdbcSinkConfig.UpdateMode.LAST_ROW_ONLY) {
-                Collections.reverse(records);
+                log.info("excluded columns list for insert " + config.insertExcludeColumns);
             }
 
-            List<String> addedKeysList = new ArrayList<>();
+            // add all columns except the updateExcludeColumns to updateColumnsList, excluded columns may have fully qualified names like tablename.columnname
+            List<String> excludedColumns = config.updateExcludeColumns.stream()
+                    .filter(column -> column.contains(".") ? column.split("\\.").length > 1 && column.split("\\.")[0].equals(tableName) : true)
+                    .map(column -> column.contains(".") ? column.split("\\.")[1] : column)
+                    .map(String::trim)
+                    .collect(Collectors.toList());
 
-            for (SinkRecord record : records) {
+            if (config.printDebugLogs) {
+                log.info("list of excluded columns for update for table: " + tableName + " " + excludedColumns);
+            }
 
-                String recordKey = "";
-                for (String key : keyColumns) {
-                    recordKey += String.valueOf(((Struct) record.key()).get(key));
+            updateColumnsList.addAll(nonKeyColumns);
+
+            if (config.printDebugLogs) {
+                log.info("The list of columns before exclusion from update list for table " + tableName + " " + updateColumnsList);
+            }
+
+            updateColumnsList.removeAll(excludedColumns);
+
+            if (config.printDebugLogs) {
+                log.info("The list of columns after exclusion from update list for table " + tableName + " " + updateColumnsList);
+            }
+
+            // add all columns except the insertExcludeColumns to insertColumnsList, excluded columns may have fully qualified names like tablename.columnname
+            excludedColumns = config.insertExcludeColumns.stream()
+                    .filter(column -> column.contains(".") ? column.split("\\.").length > 1 && column.split("\\.")[0].equals(tableName) : true)
+                    .map(column -> column.contains(".") ? column.split("\\.")[1] : column)
+                    .map(String::trim)
+                    .collect(Collectors.toList());
+
+            if (config.printDebugLogs) {
+                log.info("list of excluded columns for insert for table: " + tableName + " " + excludedColumns);
+            }
+
+            insertColumnsList.addAll(allColumns);
+
+            if (config.printDebugLogs) {
+                log.info("The list of columns before exclusion from insert list for table " + tableName + " " + insertColumnsList);
+            }
+
+            insertColumnsList.removeAll(excludedColumns);
+
+            if (config.printDebugLogs) {
+                log.info("The list of columns after exclusion from insert list for table " + tableName + " " + insertColumnsList);
+            }
+
+            totalColumns = insertColumnsList.size();
+            totalKeyColumns = keyColumns.size();
+            totalNonKeyColumns = nonKeyColumns.size();
+            totalRecords = records.size();
+
+            columnsWithDataType = createColumnNameDataTypeMapList(insertColumnsList);
+
+
+            if (config.printDebugLogs) {
+                log.info("Column Selection::Key columns: {}", keyColumns);
+                log.info("Column Selection::Non Key columns: {}", nonKeyColumns);
+                log.info("Column Selection::All columns: {}", insertColumnsList);
+            }
+            // print all counts in one shot
+            log.info("Total Columns: {}, Total Key Columns: {}, Total Non Key Columns: {}, Total Records: {}", totalColumns, totalKeyColumns, totalNonKeyColumns, totalRecords);
+            log.info("Update mode is {}", config.updateMode.name());
+
+            data = new ArrayList<>();
+            if (config.updateMode == JdbcSinkConfig.UpdateMode.DEFAULT) {
+
+                for (SinkRecord record : records) {
+                    addRow(record);
                 }
-                if (addedKeysList.contains(recordKey)) {
-                    continue;
+            } else {
+
+
+                if (config.updateMode == JdbcSinkConfig.UpdateMode.LAST_ROW_ONLY) {
+                    Collections.reverse(records);
                 }
-                addedKeysList.add(recordKey);
 
-                addRow(record);
-            }
+                List<String> addedKeysList = new ArrayList<>();
 
-            if (config.updateMode == JdbcSinkConfig.UpdateMode.LAST_ROW_ONLY) {
-                Collections.reverse(data);
+                for (SinkRecord record : records) {
+
+                    String recordKey = "";
+                    for (String key : keyColumns) {
+                        recordKey += String.valueOf(((Struct) record.key()).get(key));
+                    }
+                    if (addedKeysList.contains(recordKey)) {
+                        continue;
+                    }
+                    addedKeysList.add(recordKey);
+
+                    addRow(record);
+                }
+
+                if (config.updateMode == JdbcSinkConfig.UpdateMode.LAST_ROW_ONLY) {
+                    Collections.reverse(data);
+                }
+                log.info("Total records after applying update mode: {}", data.size());
             }
-            log.info("Total records after applying update mode: {}", data.size());
+        } catch (Exception e) {
+            throw new RuntimeException("Error while ingesting data", e);
         }
     }
 
@@ -255,7 +262,6 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
                 log.info(">>>>>TableDefinition Column: {} - {}", c.getColumnName(), c.getDataType());
             }
         });
-
 
         for (int i = 0; i < totalColumns; i++) {
             String value = null;
@@ -302,19 +308,32 @@ public abstract class GpDataIngestionService implements IGPDataIngestionService 
                 value = config.nullString;
             }
 
-            // date format
-            if (config.timestampAutoConvert && value != null && value.length() > 0) {
-                ColumnDetails column = tableDefinition.getOrderedColumn(key);
-                if (column != null && column.getDateType() != null) {
-                    if (config.printDebugLogs) {
-                        log.info("Date Value before conversion: {} for column: {}", value, key);
+
+            ColumnDetails column = tableDefinition.getOrderedColumn(key);
+            if (column != null && column.getDateType() != null) {
+                if (value != null && !value.isEmpty()) {
+                    if(config.dateConversionMode == JdbcSinkConfig.DateConversionMode.CLASS_METHOD) {
+                        try {
+                            if (DateType.DATE == column.getDateType()) {
+                                value = dateTypeConverter.convertDate(value);
+                            } else if (DateType.TIME == column.getDateType()) {
+                                value = dateTypeConverter.convertTime(value);
+                            } else if (DateType.TIMESTAMP == column.getDateType()) {
+                                value = dateTypeConverter.convertTimeStamp(value);
+                            }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Error while converting date: " + value + "for: " + key, e);
+                        }
+                    } else if (config.dateConversionMode == JdbcSinkConfig.DateConversionMode.ENUM) {
+                        value = column.getDateType().format(config, value);
+                    }else if (config.dateConversionMode == JdbcSinkConfig.DateConversionMode.TO_NULL) {
+                        value = config.nullString;
                     }
-                    value = column.getDateType().format(config, value);
-                    if (config.printDebugLogs) {
-                        log.info("Date Value after: {} for column: {}", value, key);
-                    }
+                    log.info("Converted value: {} for column: {}", value, key);
                 }
             }
+
+
             if (config.printDebugLogs) {
                 log.info("Adding value: {} for column: {}", value, key);
             }

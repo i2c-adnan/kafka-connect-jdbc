@@ -84,10 +84,10 @@ public class JdbcSinkConfig extends AbstractConfig {
 
 
     // config for timestamp.auto.convert boolean default true
-    public static final String TIMESTAMP_AUTO_CONVERT = "timestamp.auto.convert";
-    private static final boolean TIMESTAMP_AUTO_CONVERT_DEFAULT = true;
-    private static final String TIMESTAMP_AUTO_CONVERT_DOC = "Whether to convert time-based fields to Timestamp, Date, and Time objects.";
-    public static final String TIMESTAMP_AUTO_CONVERT_DISPLAY = "Timestamp Auto Convert";
+//    public static final String TIMESTAMP_AUTO_CONVERT = "timestamp.auto.convert";
+//    private static final boolean TIMESTAMP_AUTO_CONVERT_DEFAULT = true;
+//    private static final String TIMESTAMP_AUTO_CONVERT_DOC = "Whether to convert time-based fields to Timestamp, Date, and Time objects.";
+//    public static final String TIMESTAMP_AUTO_CONVERT_DISPLAY = "Timestamp Auto Convert";
 
     // config for date.from.timezone & date.to.timezone
     public static final String DATE_FROM_TIMEZONE = "date.from.timezone";
@@ -532,6 +532,15 @@ public class JdbcSinkConfig extends AbstractConfig {
                     + "Note that it is only applicable to SQL Server.";
     private static final String MSSQL_USE_MERGE_HOLDLOCK_DISPLAY =
             "SQL Server - Use HOLDLOCK in MERGE";
+
+    public static final String DATE_CONVERSION_MODE = "date.conversion.mode";
+
+    private static final DateConversionMode DATE_CONVERSION_MODE_DEFAULT = DateConversionMode.DEFAULT;
+    private static final String DATE_CONVERSION_MODE_DOC = "Date conversion mode between different databases - " +
+            "DEFAULT - No conversion"+
+            "ENUM - Via enum implementation" +
+            "CLASS_METHOD - Via class methods";
+    private static final String DATE_CONVERSION_MODE_DISPLAY = "Date Conversion Mode";
 
 
 
@@ -1017,16 +1026,17 @@ public class JdbcSinkConfig extends AbstractConfig {
                     1,
             ConfigDef.Width.LONG,
             DATE_TO_FORMAT_DISPLAY
-    ).define(
-                    TIMESTAMP_AUTO_CONVERT,
-                    ConfigDef.Type.BOOLEAN,
-                    TIMESTAMP_AUTO_CONVERT_DEFAULT,
-                    ConfigDef.Importance.MEDIUM,
-                    TIMESTAMP_AUTO_CONVERT_DOC,
-                    WRITES_GROUP,
-                    1,
-                    ConfigDef.Width.SHORT,
-                    TIMESTAMP_AUTO_CONVERT_DISPLAY)
+    )
+//            .define(
+//                    TIMESTAMP_AUTO_CONVERT,
+//                    ConfigDef.Type.BOOLEAN,
+//                    TIMESTAMP_AUTO_CONVERT_DEFAULT,
+//                    ConfigDef.Importance.MEDIUM,
+//                    TIMESTAMP_AUTO_CONVERT_DOC,
+//                    WRITES_GROUP,
+//                    1,
+//                    ConfigDef.Width.SHORT,
+//                    TIMESTAMP_AUTO_CONVERT_DISPLAY)
             .define(
                     DATE_FROM_TIMEZONE,
                     ConfigDef.Type.STRING,
@@ -1078,7 +1088,8 @@ public class JdbcSinkConfig extends AbstractConfig {
             .define(INSERT_COLUMN_EXCLUDE_LIST, ConfigDef.Type.STRING, INSERT_COLUMN_EXCLUDE_LIST_DEFAULT, ConfigDef.Importance.MEDIUM, INSERT_COLUMN_EXCLUDE_LIST_DOC, WRITES_GROUP, 1, ConfigDef.Width.LONG, INSERT_COLUMN_EXCLUDE_LIST_DISPLAY)
             .define(GP_FAST_MATCH, ConfigDef.Type.BOOLEAN, GP_FAST_MATCH_DEFAULT, ConfigDef.Importance.MEDIUM, GP_FAST_MATCH_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, GP_FAST_MATCH_DISPLAY)
             .define(GP_REUSE_TABLE, ConfigDef.Type.BOOLEAN, GP_REUSE_TABLE_DEFAULT, ConfigDef.Importance.MEDIUM, GP_REUSE_TABLE_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, GP_REUSE_TABLE_DISPLAY)
-            .define(SKIP_DATA_LOAD_CONFIG, ConfigDef.Type.BOOLEAN, SKIP_DATA_LOAD_DEFAULT, ConfigDef.Importance.MEDIUM, SKIP_DATA_LOAD_DOC);
+            .define(SKIP_DATA_LOAD_CONFIG, ConfigDef.Type.BOOLEAN, SKIP_DATA_LOAD_DEFAULT, ConfigDef.Importance.MEDIUM, SKIP_DATA_LOAD_DOC)
+            .define(DATE_CONVERSION_MODE, ConfigDef.Type.STRING, DATE_CONVERSION_MODE_DEFAULT.toString(), EnumValidator.in(DateConversionMode.values()), ConfigDef.Importance.MEDIUM, DATE_CONVERSION_MODE_DOC, WRITES_GROUP, 1, ConfigDef.Width.MEDIUM, DATE_CONVERSION_MODE_DISPLAY);
     public static void printConfigDefTable(ConfigDef configDef) {
 
         System.out.format("%-30s %-20s %-30s %-15s %-50s%n", "Name", "Type", "Default", "Importance", "Documentation");
@@ -1141,8 +1152,22 @@ public class JdbcSinkConfig extends AbstractConfig {
     public final boolean gpssUseStickySession;
     private static final Logger log = LoggerFactory.getLogger(JdbcSinkConfig.class);
     public final boolean skipDataLoad;
-
     public boolean printDebugLogs;
+
+
+    public enum DateConversionMode {
+        DEFAULT,
+        ENUM,
+        CLASS_METHOD,
+        TO_NULL
+    }
+
+
+    // gp fast match
+
+
+    public DateConversionMode dateConversionMode;
+
 
     //gpfdist
 
@@ -1176,7 +1201,7 @@ public class JdbcSinkConfig extends AbstractConfig {
     public final String dateFromFormat;
     public final String dateToFormat;
 
-    public final boolean timestampAutoConvert;
+//    public final boolean timestampAutoConvert;
 
     public TimeZone dateFromTimezone;
     public TimeZone dateToTimezone;
@@ -1283,7 +1308,7 @@ public class JdbcSinkConfig extends AbstractConfig {
         timestampToFormat = getString(TIMESTAMP_TO_FORMAT);
         dateFromFormat = getString(DATE_FROM_FORMAT);
         dateToFormat = getString(DATE_TO_FORMAT);
-        timestampAutoConvert = getBoolean(TIMESTAMP_AUTO_CONVERT);
+//        timestampAutoConvert = getBoolean(TIMESTAMP_AUTO_CONVERT);
         String fromTimezone = getString(DATE_FROM_TIMEZONE);
         if (fromTimezone != null && !fromTimezone.isEmpty()){
             dateFromTimezone = TimeZone.getTimeZone(ZoneId.of(fromTimezone));
@@ -1309,6 +1334,8 @@ public class JdbcSinkConfig extends AbstractConfig {
         }
         gpFastMatch = getBoolean(GP_FAST_MATCH);
         gpReuseTable = getBoolean(GP_REUSE_TABLE);
+
+        dateConversionMode = DateConversionMode.valueOf(getString(DATE_CONVERSION_MODE).toUpperCase());
 
     }
 
